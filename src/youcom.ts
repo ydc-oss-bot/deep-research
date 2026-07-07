@@ -8,7 +8,7 @@ import type { SearchResponse } from '@mendable/firecrawl-js';
 // existing deep-research pipeline consumes). If html/metadata are needed
 // later, extend the `formats` array in fetchContents and surface the fields.
 
-const SEARCH_ENDPOINT = 'https://api.you.com/v1/agents/search';
+const SEARCH_ENDPOINT = 'https://ydc-index.io/v1/search';
 const CONTENTS_ENDPOINT = 'https://ydc-index.io/v1/contents';
 
 export type YoucomSearchOptions = {
@@ -34,16 +34,16 @@ type ContentsEntry = {
 async function fetchJson(
   url: string,
   apiKey: string,
-  body: unknown,
-  timeoutMs: number,
+  init: { method?: 'GET' | 'POST'; body?: unknown; timeoutMs: number },
 ) {
+  const { method = 'POST', body, timeoutMs } = init;
   const res = await fetch(url, {
-    method: 'POST',
+    method,
     headers: {
       'X-API-Key': apiKey,
-      'Content-Type': 'application/json',
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     },
-    body: JSON.stringify(body),
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
@@ -72,12 +72,14 @@ export async function search(
   const maxResults = options.limit ?? 5;
   const timeout = options.timeout ?? 15000;
 
-  const searchData = await fetchJson(
-    SEARCH_ENDPOINT,
-    apiKey,
-    { query, max_results: maxResults },
-    timeout,
-  );
+  const searchUrl = new URL(SEARCH_ENDPOINT);
+  searchUrl.searchParams.set('query', query);
+  searchUrl.searchParams.set('count', String(maxResults));
+
+  const searchData = await fetchJson(searchUrl.toString(), apiKey, {
+    method: 'GET',
+    timeoutMs: timeout,
+  });
 
   const hits: SearchHit[] = searchData?.results?.web ?? [];
   const urls = hits
@@ -88,16 +90,14 @@ export async function search(
     return { success: true, data: [] } as SearchResponse;
   }
 
-  const contentsData = (await fetchJson(
-    CONTENTS_ENDPOINT,
-    apiKey,
-    {
+  const contentsData = (await fetchJson(CONTENTS_ENDPOINT, apiKey, {
+    body: {
       urls,
       formats: ['markdown'],
       crawl_timeout: Math.max(1, Math.min(60, Math.ceil(timeout / 1000))),
     },
-    timeout * urls.length,
-  )) as ContentsEntry[];
+    timeoutMs: timeout * urls.length,
+  })) as ContentsEntry[];
 
   const markdownByUrl = new Map<string, string>();
   for (const c of contentsData) {

@@ -9,18 +9,15 @@ import { search } from './youcom';
 // for crawl_timeout propagation and partial-content edge cases if needed.
 describe('youcom search', () => {
   const originalFetch = globalThis.fetch;
-  let calls: { url: string; body: any }[] = [];
+  let calls: { url: string; init: any }[] = [];
 
   beforeEach(() => {
     calls = [];
     process.env.YDC_API_KEY = 'test-key';
     globalThis.fetch = (async (url: any, init: any) => {
-      calls.push({
-        url: String(url),
-        body: init?.body ? JSON.parse(init.body) : null,
-      });
+      calls.push({ url: String(url), init });
       const u = String(url);
-      if (u.includes('/v1/agents/search')) {
+      if (u.includes('/v1/search')) {
         return new Response(
           JSON.stringify({
             results: {
@@ -59,7 +56,7 @@ describe('youcom search', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('calls search then contents and maps markdown with snippet fallback', async () => {
+  it('calls search (GET with query+count) then contents (POST) and maps markdown with snippet fallback', async () => {
     const res = await search('hello', { limit: 2, timeout: 15000 });
 
     assert.equal(res.success, true);
@@ -69,24 +66,28 @@ describe('youcom search', () => {
     // second hit had no contents markdown → falls back to joined snippets
     assert.equal(res.data[1]!.markdown, 'snippet B');
 
-    const searchCall = calls.find(c => c.url.includes('/v1/agents/search'));
+    const searchCall = calls.find(c => c.url.includes('/v1/search'));
     assert.ok(searchCall, 'search endpoint was called');
-    assert.equal(searchCall!.body.query, 'hello');
-    assert.equal(searchCall!.body.max_results, 2);
+    assert.equal(searchCall!.init.method, 'GET');
+    const searchParams = new URL(searchCall!.url).searchParams;
+    assert.equal(searchParams.get('query'), 'hello');
+    assert.equal(searchParams.get('count'), '2');
 
     const contentsCall = calls.find(c => c.url.includes('/v1/contents'));
     assert.ok(contentsCall, 'contents endpoint was called');
-    assert.deepEqual(contentsCall!.body.urls, [
+    assert.equal(contentsCall!.init.method, 'POST');
+    const contentsBody = JSON.parse(contentsCall!.init.body);
+    assert.deepEqual(contentsBody.urls, [
       'https://a.example',
       'https://b.example',
     ]);
-    assert.deepEqual(contentsCall.body.formats, ['markdown']);
+    assert.deepEqual(contentsBody.formats, ['markdown']);
   });
 
   it('returns empty data when search has no web results', async () => {
     globalThis.fetch = (async (url: any) => {
       const u = String(url);
-      if (u.includes('/v1/agents/search')) {
+      if (u.includes('/v1/search')) {
         return new Response(JSON.stringify({ results: {} }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
