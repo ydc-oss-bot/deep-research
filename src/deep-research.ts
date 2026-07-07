@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { getModel, trimPrompt } from './ai/providers';
 import { systemPrompt } from './prompt';
+import * as youcom from './youcom';
 
 function log(...args: any[]) {
   console.log(...args);
@@ -35,6 +36,23 @@ const firecrawl = new FirecrawlApp({
   apiKey: process.env.FIRECRAWL_KEY ?? '',
   apiUrl: process.env.FIRECRAWL_BASE_URL,
 });
+
+// Search backend selector. Set SEARCH_PROVIDER=youcom to use You.com's
+// Search + Contents APIs instead of Firecrawl. Requires YDC_API_KEY.
+const SearchProvider = process.env.SEARCH_PROVIDER ?? 'firecrawl';
+
+async function runSearch(
+  query: string,
+  opts: { limit: number; timeout: number },
+): Promise<SearchResponse> {
+  if (SearchProvider === 'youcom') {
+    return youcom.search(query, opts);
+  }
+  return firecrawl.search(query, {
+    ...opts,
+    scrapeOptions: { formats: ['markdown'] },
+  });
+}
 
 // take en user query, return a list of SERP queries
 async function generateSerpQueries({
@@ -89,8 +107,8 @@ async function processSerpResult({
   numLearnings?: number;
   numFollowUpQuestions?: number;
 }) {
-  const contents = compact(result.data.map(item => item.markdown)).map(content =>
-    trimPrompt(content, 25_000),
+  const contents = compact(result.data.map(item => item.markdown)).map(
+    content => trimPrompt(content, 25_000),
   );
   log(`Ran ${query}, found ${contents.length} contents`);
 
@@ -104,7 +122,9 @@ async function processSerpResult({
         .join('\n')}</contents>`,
     ),
     schema: z.object({
-      learnings: z.array(z.string()).describe(`List of learnings, max of ${numLearnings}`),
+      learnings: z
+        .array(z.string())
+        .describe(`List of learnings, max of ${numLearnings}`),
       followUpQuestions: z
         .array(z.string())
         .describe(
@@ -137,7 +157,9 @@ export async function writeFinalReport({
       `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as as detailed as possible, aim for 3 or more pages, include ALL the learnings from research:\n\n<prompt>${prompt}</prompt>\n\nHere are all the learnings from previous research:\n\n<learnings>\n${learningsString}\n</learnings>`,
     ),
     schema: z.object({
-      reportMarkdown: z.string().describe('Final report on the topic in Markdown'),
+      reportMarkdown: z
+        .string()
+        .describe('Final report on the topic in Markdown'),
     }),
   });
 
@@ -166,7 +188,9 @@ export async function writeFinalAnswer({
     schema: z.object({
       exactAnswer: z
         .string()
-        .describe('The final answer, make it short and concise, just the answer, no other text'),
+        .describe(
+          'The final answer, make it short and concise, just the answer, no other text',
+        ),
     }),
   });
 
@@ -219,10 +243,9 @@ export async function deepResearch({
     serpQueries.map(serpQuery =>
       limit(async () => {
         try {
-          const result = await firecrawl.search(serpQuery.query, {
+          const result = await runSearch(serpQuery.query, {
             timeout: 15000,
             limit: 5,
-            scrapeOptions: { formats: ['markdown'] },
           });
 
           // Collect URLs from this search
@@ -239,7 +262,9 @@ export async function deepResearch({
           const allUrls = [...visitedUrls, ...newUrls];
 
           if (newDepth > 0) {
-            log(`Researching deeper, breadth: ${newBreadth}, depth: ${newDepth}`);
+            log(
+              `Researching deeper, breadth: ${newBreadth}, depth: ${newDepth}`,
+            );
 
             reportProgress({
               currentDepth: newDepth,
