@@ -107,8 +107,8 @@ async function processSerpResult({
   numLearnings?: number;
   numFollowUpQuestions?: number;
 }) {
-  const contents = compact(result.data.map(item => item.markdown)).map(
-    content => trimPrompt(content, 25_000),
+  const contents = compact(result.data.map(item => item.markdown)).map(content =>
+    trimPrompt(content, 25_000),
   );
   log(`Ran ${query}, found ${contents.length} contents`);
 
@@ -122,9 +122,7 @@ async function processSerpResult({
         .join('\n')}</contents>`,
     ),
     schema: z.object({
-      learnings: z
-        .array(z.string())
-        .describe(`List of learnings, max of ${numLearnings}`),
+      learnings: z.array(z.string()).describe(`List of learnings, max of ${numLearnings}`),
       followUpQuestions: z
         .array(z.string())
         .describe(
@@ -157,9 +155,7 @@ export async function writeFinalReport({
       `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as as detailed as possible, aim for 3 or more pages, include ALL the learnings from research:\n\n<prompt>${prompt}</prompt>\n\nHere are all the learnings from previous research:\n\n<learnings>\n${learningsString}\n</learnings>`,
     ),
     schema: z.object({
-      reportMarkdown: z
-        .string()
-        .describe('Final report on the topic in Markdown'),
+      reportMarkdown: z.string().describe('Final report on the topic in Markdown'),
     }),
   });
 
@@ -188,9 +184,7 @@ export async function writeFinalAnswer({
     schema: z.object({
       exactAnswer: z
         .string()
-        .describe(
-          'The final answer, make it short and concise, just the answer, no other text',
-        ),
+        .describe('The final answer, make it short and concise, just the answer, no other text'),
     }),
   });
 
@@ -262,9 +256,7 @@ export async function deepResearch({
           const allUrls = [...visitedUrls, ...newUrls];
 
           if (newDepth > 0) {
-            log(
-              `Researching deeper, breadth: ${newBreadth}, depth: ${newDepth}`,
-            );
+            log(`Researching deeper, breadth: ${newBreadth}, depth: ${newDepth}`);
 
             reportProgress({
               currentDepth: newDepth,
